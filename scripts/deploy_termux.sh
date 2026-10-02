@@ -1,14 +1,19 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ==============================================================================
-# Eridanus & SnowLuma 一键自动化环境部署脚本 (Termux 专属)
-# 支持在 Android 设备上快速部署 Ubuntu 24.04/22.04 + Node 22 + Linux QQ + Python 3.11
+# Eridanus & QQ Bot 一键自动化环境部署脚本 (Termux 专属)
+# 支持在 Android 设备上快速部署 Ubuntu + Node 22 + Linux QQ + NapCat + SnowLuma + Eridanus
 # ==============================================================================
-
-# set -e (disabled to allow robust execution and graceful fallbacks)
 
 echo "=========================================================="
 echo "      🚀 Eridanus & SnowLuma Termux 宿主自动化部署      "
 echo "=========================================================="
+
+# 0. 强制固化 Termux 环境变量与执行目录
+export PREFIX="/data/data/com.termux/files/usr"
+export HOME="/data/data/com.termux/files/home"
+export PATH="$PREFIX/bin:$PREFIX/bin/applets:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export LD_LIBRARY_PATH="$PREFIX/lib"
+cd "$HOME" 2>/dev/null || true
 
 # 1. 开启外部应用调用权限 (支持 Eridanus App 隐式起停控制)
 echo "[1/5] 配置 Termux 外部应用控制权限..."
@@ -19,7 +24,7 @@ fi
 echo "allow-external-apps = true" >> ~/.termux/termux.properties
 echo "✓ allow-external-apps 已启用"
 
-# 2. 检查 Termux 基础包
+# 2. 检查 Termux 宿主组件
 echo "[2/5] 检查 Termux 宿主组件..."
 if ! command -v proot-distro >/dev/null 2>&1; then
     echo "正在安装 proot-distro..."
@@ -28,9 +33,16 @@ else
     echo "✓ proot-distro 已就绪，跳过宿主包更新"
 fi
 
-# 3. 安装 Ubuntu 用户态
+# 3. 安装或检测 Ubuntu 容器
 echo "[3/5] 准备 Ubuntu Linux 容器环境..."
-if proot-distro login ubuntu -- echo "ok" >/dev/null 2>&1 || [ -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ]; then
+UBUNTU_EXISTS=0
+if proot-distro login ubuntu -- echo "ok" >/dev/null 2>&1; then
+    UBUNTU_EXISTS=1
+elif [ -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ] || [ -d "$PREFIX/var/lib/proot-distro/containers/ubuntu" ]; then
+    UBUNTU_EXISTS=1
+fi
+
+if [ "$UBUNTU_EXISTS" -eq 1 ]; then
     echo "✓ 检测到已安装 Ubuntu 容器，直接复用"
 else
     echo "正在拉取并安装 Ubuntu 根文件系统..."
@@ -38,32 +50,39 @@ else
 fi
 
 # 4. 在 Ubuntu 容器内部配置所需依赖
-echo "[4/5] 进入 Ubuntu 容器并配置 Node / Python / Linux QQ / Xvfb 环境..."
+echo "[4/5] 进入 Ubuntu 容器并配置环境 (网络工具 / GUI / Node / Python / QQ / Bot 栈)..."
 
 cat << 'UBUNTU_ENV_EOF' | proot-distro login ubuntu -- bash
-set -e
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 
 echo "-> [Ubuntu] 配置北京时间时区 (Asia/Shanghai)..."
 ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime 2>/dev/null || true
 echo "Asia/Shanghai" > /etc/timezone 2>/dev/null || true
-echo "export TZ=Asia/Shanghai" >> /root/.bashrc 2>/dev/null || true
-echo "export TZ=Asia/Shanghai" >> /etc/profile 2>/dev/null || true
+if ! grep -q "TZ=Asia/Shanghai" /root/.bashrc 2>/dev/null; then
+    echo "export TZ=Asia/Shanghai" >> /root/.bashrc 2>/dev/null || true
+fi
+if ! grep -q "TZ=Asia/Shanghai" /etc/profile 2>/dev/null; then
+    echo "export TZ=Asia/Shanghai" >> /etc/profile 2>/dev/null || true
+fi
 export TZ=Asia/Shanghai
 
-echo "-> [Ubuntu] 更新软件源并安装基础系统依赖..."
+echo "-> [Ubuntu] 更新软件源..."
 apt-get update -y || true
-apt-get install -y software-properties-common curl wget git build-essential \
-    xvfb fluxbox x11vnc novnc websockify redis-server \
-    python3 python3-pip python3-venv python3-dev \
-    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-    libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-    libgbm1 libpango-1.0-0 libcairo2 libcairo2-dev pkg-config python3-cairo libglib2.0-0 \
-    libasound2 libasound2t64 libgtk-3-0 fonts-noto-cjk libcap2-bin || true
 
-# 准备 noVNC 首页软链接
+echo "-> [Ubuntu] 安装网络及核心解压工具 (curl, wget, git, tar, unzip, xz)..."
+apt-get install -y --no-install-recommends ca-certificates curl wget git tar unzip xz-utils || true
+
+echo "-> [Ubuntu] 安装 Xvfb / VNC / Web 运行依赖..."
+apt-get install -y --no-install-recommends xvfb fluxbox x11vnc novnc websockify || true
 ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html 2>/dev/null || true
+
+echo "-> [Ubuntu] 安装 Python 运行环境..."
+apt-get install -y --no-install-recommends python3 python3-pip python3-venv || true
+
+echo "-> [Ubuntu] 安装 Linux QQ / GUI 底层动态链接库..."
+apt-get install -y --no-install-recommends     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2     libgbm1 libpango-1.0-0 libcairo2 libgtk-3-0 fonts-noto-cjk     libasound2t64 libasound2 2>/dev/null || true
+apt-get install -fy 2>/dev/null || true
 
 # 安装 Node.js 22 LTS
 if ! command -v node >/dev/null 2>&1; then
@@ -74,48 +93,54 @@ fi
 echo "✓ Node 版本: $(node -v 2>/dev/null || echo '未就绪')"
 echo "✓ Python 版本: $(python3 --version 2>/dev/null || echo '未就绪')"
 
-# 赋予 Node ptrace 能力
-setcap cap_sys_ptrace=ep "$(readlink -f "$(which node)")" 2>/dev/null || true
-
 # 冻结 QQ 热更新 (防止补丁破坏 Hook)
 if ! grep -q "qqpatch.gtimg.cn" /etc/hosts 2>/dev/null; then
     echo "0.0.0.0 qqpatch.gtimg.cn" >> /etc/hosts
 fi
 
-# 下载 Linux QQ arm64
+# 智能双模下载函数 (同时支持 curl / wget 与 ghproxy 镜像)
+download_file() {
+    local url="$1"
+    local dest="$2"
+    local gh_proxy="https://ghproxy.net/$url"
+    
+    echo "下载: $dest ..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$dest" 2>/dev/null || curl -fsSL "$gh_proxy" -o "$dest" 2>/dev/null || true
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$dest" "$url" 2>/dev/null || wget -q -O "$dest" "$gh_proxy" 2>/dev/null || true
+    fi
+}
+
+# 1. 部署 Linux QQ (ARM64)
 mkdir -p /root/qq_installer
 cd /root/qq_installer
-if [ ! -f /root/qq_installer/linuxqq.deb ]; then
+if [ ! -f /root/qq_installer/linuxqq.deb ] || [ $(wc -c < /root/qq_installer/linuxqq.deb 2>/dev/null || echo 0) -lt 50000000 ]; then
     echo "-> [Ubuntu] 下载官方 Linux QQ (ARM64)..."
-    wget -q --show-progress -O linuxqq.deb "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/linuxqq_3.2.34-53644_arm64.deb" || true
-    if [ -f linuxqq.deb ]; then
-        dpkg -i linuxqq.deb || apt-get install -fy || true
-    fi
+    download_file "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.36/beta/9ee04bef/linuxqq_3.2.34-53644_arm64.deb" linuxqq.deb
+fi
+if [ -f linuxqq.deb ]; then
+    dpkg -i linuxqq.deb 2>/dev/null || apt-get install -fy 2>/dev/null || true
 fi
 
-# 部署 SnowLuma
+# 2. 部署 SnowLuma
 mkdir -p /root/snowluma
 cd /root/snowluma
 if [ ! -f /root/snowluma/index.mjs ]; then
     echo "-> [Ubuntu] 下载 SnowLuma 核心 (ARM64 Lite)..."
-    SL_URL=$(curl -s "https://api.github.com/repos/SnowLuma/SnowLuma/releases/latest" | grep -o "https://[^\" ]*linux-arm64-lite\.tar\.gz" | head -n 1)
-    if [ -z "$SL_URL" ]; then
-        SL_URL="https://github.com/SnowLuma/SnowLuma/releases/download/v1.14.20/SnowLuma-v1.14.20-linux-arm64-lite.tar.gz"
-    fi
-    wget -q --show-progress -O snowluma.tar.gz "$SL_URL" 2>/dev/null || wget -q -O snowluma.tar.gz "https://ghproxy.net/$SL_URL" 2>/dev/null || true
-    if [ -f snowluma.tar.gz ]; then
+    download_file "https://github.com/SnowLuma/SnowLuma/releases/download/v1.14.20/SnowLuma-v1.14.20-linux-arm64-lite.tar.gz" snowluma.tar.gz
+    if [ -f snowluma.tar.gz ] && [ $(wc -c < snowluma.tar.gz 2>/dev/null || echo 0) -gt 10000 ]; then
         tar -xzf snowluma.tar.gz --strip-components=1 2>/dev/null || tar -xzf snowluma.tar.gz 2>/dev/null || true
         rm -f snowluma.tar.gz
     fi
 fi
 
-# 部署 NapCatQQ (无头 NTQQ 协议端)
+# 3. 部署 NapCatQQ
 mkdir -p /root/napcat
 if [ ! -f /root/napcat/napcat.mjs ] && [ ! -f /root/napcat/loadNapCat.js ]; then
     echo "-> [Ubuntu] 下载 NapCatQQ (Linux ARM64)..."
-    NC_URL="https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.linux.arm64.zip"
-    wget -q --show-progress -O /tmp/napcat.zip "$NC_URL" 2>/dev/null || wget -q -O /tmp/napcat.zip "https://ghproxy.net/$NC_URL" 2>/dev/null || wget -q -O /tmp/napcat.zip "https://github.com/NapNeko/NapCatQQ/releases/download/v4.4.55/NapCat.linux.arm64.zip" || true
-    if [ -f /tmp/napcat.zip ]; then
+    download_file "https://github.com/NapNeko/NapCatQQ/releases/download/v4.4.55/NapCat.linux.arm64.zip" /tmp/napcat.zip
+    if [ -f /tmp/napcat.zip ] && [ $(wc -c < /tmp/napcat.zip 2>/dev/null || echo 0) -gt 10000 ]; then
         unzip -q -o /tmp/napcat.zip -d /root/napcat || true
         rm -f /tmp/napcat.zip
     fi
@@ -132,67 +157,45 @@ if [ ! -f /root/napcat/config/webui.json ]; then
 EOF_NC
 fi
 
-# 部署 LuckyLilliaBot (极简独立无头 OneBot 端)
+# 4. 部署 LuckyLilliaBot
 mkdir -p /root/llonebot
 if [ ! -f /root/llonebot/llbot ] && [ ! -f /root/llonebot/package.json ]; then
     echo "-> [Ubuntu] 下载 LuckyLilliaBot (Linux ARM64)..."
-    LL_URL=$(curl -s "https://api.github.com/repos/LLOneBot/LuckyLilliaBot/releases/latest" | grep -o "https://[^\" ]*linux-arm64[^\" ]*\.tar\.gz" | head -n 1)
-    [ -z "$LL_URL" ] && LL_URL="https://github.com/LLOneBot/LuckyLilliaBot/releases/download/v4.2.1/LLBot-Linux-arm64.tar.gz"
-    wget -q --show-progress -O /tmp/llbot.tar.gz "$LL_URL" 2>/dev/null || wget -q -O /tmp/llbot.tar.gz "https://ghproxy.net/$LL_URL" 2>/dev/null || true
-    if [ -f /tmp/llbot.tar.gz ]; then
+    download_file "https://github.com/LLOneBot/LuckyLilliaBot/releases/download/v4.2.1/LLBot-Linux-arm64.tar.gz" /tmp/llbot.tar.gz
+    if [ -f /tmp/llbot.tar.gz ] && [ $(wc -c < /tmp/llbot.tar.gz 2>/dev/null || echo 0) -gt 10000 ]; then
         tar -xzf /tmp/llbot.tar.gz -C /root/llonebot 2>/dev/null || true
         rm -f /tmp/llbot.tar.gz
     fi
 fi
 
-# 部署 Eridanus
+# 5. 部署 Eridanus 源码
 mkdir -p /root/eridanus
 cd /root/eridanus
 if [ ! -f /root/eridanus/main.py ]; then
     echo "-> [Ubuntu] 拉取 Eridanus 源码..."
-    git clone https://github.com/12214376/Eridanus.git /root/eridanus 2>/dev/null || git clone https://ghproxy.net/https://github.com/12214376/Eridanus.git /root/eridanus || true
-fi
-
-if [ -f /root/eridanus/requirements.txt ]; then
-    echo "-> [Ubuntu] 准备 Python 虚拟环境与依赖..."
-    PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "")
-    if [ -n "$PY_VER" ]; then
-        apt-get install -y "python${PY_VER}-venv" || true
+    if command -v git >/dev/null 2>&1; then
+        git clone https://github.com/12214376/Eridanus.git /root/eridanus 2>/dev/null || git clone https://ghproxy.net/https://github.com/12214376/Eridanus.git /root/eridanus 2>/dev/null || true
     fi
-    apt-get install -y python3-venv python3-full python3-pip python3-setuptools python3-wheel || true
-    
-    rm -rf /root/eridanus/venv
-    
-    # 尝试标准创建 venv
-    if ! python3 -m venv /root/eridanus/venv 2>/dev/null; then
-        echo "-> 提示: ensurepip 缺失，采用 --without-pip 模式创建虚拟环境并注入 pip..."
-        python3 -m venv --without-pip /root/eridanus/venv || true
-        if [ -f /root/eridanus/venv/bin/python3 ]; then
-            curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py || true
-            if [ -f /tmp/get-pip.py ]; then
-                /root/eridanus/venv/bin/python3 /tmp/get-pip.py || true
-                rm -f /tmp/get-pip.py
-            fi
+    # 若 git 失败，使用 zip 离线包兜底下载解压
+    if [ ! -f /root/eridanus/main.py ]; then
+        echo "-> 尝试通过 ZIP 压缩包下载 Eridanus 源码..."
+        download_file "https://github.com/12214376/Eridanus/archive/refs/heads/master.zip" /tmp/eridanus_master.zip
+        if [ -f /tmp/eridanus_master.zip ] && [ $(wc -c < /tmp/eridanus_master.zip 2>/dev/null || echo 0) -gt 5000 ]; then
+            unzip -q -o /tmp/eridanus_master.zip -d /tmp/eridanus_extract || true
+            cp -rf /tmp/eridanus_extract/Eridanus-master/* /root/eridanus/ 2>/dev/null || true
+            rm -rf /tmp/eridanus_master.zip /tmp/eridanus_extract
         fi
     fi
-    
-    # 检查并安装依赖
-    PIP_BIN=""
-    if [ -f /root/eridanus/venv/bin/pip ]; then
-        PIP_BIN="/root/eridanus/venv/bin/pip"
-    elif [ -f /root/eridanus/venv/bin/pip3 ]; then
-        PIP_BIN="/root/eridanus/venv/bin/pip3"
-    fi
+fi
 
-    if [ -n "$PIP_BIN" ]; then
-        echo "-> [Ubuntu] 在虚拟环境中安装 Eridanus 依赖..."
-        "$PIP_BIN" install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple || true
-        "$PIP_BIN" install audioop-lts wheel setuptools flask-sock -i https://pypi.tuna.tsinghua.edu.cn/simple || true
-        "$PIP_BIN" install -r /root/eridanus/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple || true
-    elif command -v pip3 >/dev/null 2>&1; then
-        echo "-> [Ubuntu] 在全局环境中安装 Eridanus 依赖..."
-        pip3 install --break-system-packages audioop-lts wheel setuptools flask-sock -i https://pypi.tuna.tsinghua.edu.cn/simple || true
-        pip3 install --break-system-packages --ignore-installed -r /root/eridanus/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple || true
+# 6. 配置 Python 依赖
+if [ -f /root/eridanus/requirements.txt ]; then
+    echo "-> [Ubuntu] 安装 Eridanus Python 依赖..."
+    python3 -m venv /root/eridanus/venv 2>/dev/null || true
+    if [ -f /root/eridanus/venv/bin/pip ]; then
+        /root/eridanus/venv/bin/pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r /root/eridanus/requirements.txt 2>/dev/null || true
+    else
+        pip3 install --no-cache-dir --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple -r /root/eridanus/requirements.txt 2>/dev/null || true
     fi
 fi
 
@@ -390,8 +393,14 @@ start_napcat() {
         # 2. 软链接 resources 目录避免路径歧义
         [ -d /opt/QQ/resources ] && ln -sf /opt/QQ/resources /usr/bin/resources 2>/dev/null || true
 
-        # 3. 启动无头 QQ（xvfb 1x1 虚拟屏幕，免桌面/免 VNC/极低功耗，直接通过 WebUI 6099 扫码配置）
-        exec xvfb-run -a /opt/QQ/qq --no-sandbox -q > /root/napcat.log 2>&1
+        # 3. 启动 NapCat（优先原生极速 node napcat.mjs，兼容 Linux QQ 挂载）
+        if [ -f /root/napcat/napcat.mjs ]; then
+            cd /root/napcat && exec node napcat.mjs > /root/napcat.log 2>&1
+        elif command -v xvfb-run >/dev/null 2>&1 && [ -f /opt/QQ/qq ]; then
+            exec xvfb-run -a /opt/QQ/qq --no-sandbox -q > /root/napcat.log 2>&1
+        else
+            cd /root/napcat && exec node loadNapCat.js > /root/napcat.log 2>&1
+        fi
     '
 
     if [ "$IS_CONTAINER" -eq 1 ]; then
@@ -555,6 +564,84 @@ stop_eridanus() {
     echo "[Hub] Eridanus 核心服务已停止。"
 }
 
+eridanus_tool() {
+    local SUB_ACTION="$1"
+    [ -z "$SUB_ACTION" ] && SUB_ACTION="update_code"
+    echo "[Hub] 正在执行 Eridanus 维护与工具任务: $SUB_ACTION..."
+
+    local CMD='
+        export HOME=/root
+        export TZ=Asia/Shanghai
+        export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+        cd /root/eridanus || exit 1
+        
+        PY_CMD=python3
+        [ -f /root/eridanus/venv/bin/python3 ] && PY_CMD=/root/eridanus/venv/bin/python3
+        PIP_CMD=pip3
+        [ -f /root/eridanus/venv/bin/pip ] && PIP_CMD=/root/eridanus/venv/bin/pip
+        
+        case "'"$SUB_ACTION"'" in
+            update_code|update|2)
+                echo "-> [1/2] 正在拉取 Eridanus 最新核心代码..."
+                git pull origin master 2>/dev/null || git pull https://github.com/12214376/Eridanus.git || git pull || true
+                echo "-> [2/2] 正在检查并更新依赖清单..."
+                if [ -f requirements.txt ]; then
+                    $PIP_CMD install --upgrade -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple || true
+                fi
+                echo "✓ Eridanus 代码与核心依赖更新完成！"
+                ;;
+            install_playwright|playwright|3)
+                echo "-> 正在安装 Playwright 工具及 Chromium 内核..."
+                $PIP_CMD install playwright -i https://pypi.tuna.tsinghua.edu.cn/simple || true
+                $PY_CMD -m playwright install chromium || true
+                echo "✓ Playwright 工具安装完成！"
+                ;;
+            install_ai|ai|5)
+                echo "-> 正在安装/更新 AI 检测依赖库 (如奶龙检测)..."
+                $PIP_CMD install opencv-python-headless pillow torchvision -i https://pypi.tuna.tsinghua.edu.cn/simple || true
+                echo "✓ AI 库安装完成！"
+                ;;
+            update_jmcomic|jmcomic|9)
+                echo "-> 正在升级 jmcomic 库..."
+                $PIP_CMD install --upgrade jmcomic -i https://pypi.tuna.tsinghua.edu.cn/simple || true
+                echo "✓ jmcomic 库更新完成！"
+                ;;
+            export_config|7)
+                echo "-> 正在备份导出配置文件..."
+                mkdir -p /root/eridanus/backup_yamls
+                cp -rf config/* /root/eridanus/backup_yamls/ 2>/dev/null || true
+                echo "✓ 配置文件已备份至 /root/eridanus/backup_yamls"
+                ;;
+            import_config|8)
+                echo "-> 正在恢复导入配置文件..."
+                if [ -d /root/eridanus/backup_yamls ]; then
+                    cp -rf /root/eridanus/backup_yamls/* config/ 2>/dev/null || true
+                    echo "✓ 配置文件已成功恢复！"
+                else
+                    echo "✗ 未找到备份配置文件目录 (/root/eridanus/backup_yamls)"
+                fi
+                ;;
+            interactive|tool|run_tool)
+                if [ -f tool.py ]; then
+                    $PY_CMD tool.py
+                else
+                    echo "tool.py 未找到，直接执行代码更新"
+                    git pull
+                fi
+                ;;
+            *)
+                echo "用法: bot_service.sh eridanus_tool {update_code|install_playwright|install_ai|update_jmcomic|export_config|import_config|interactive}"
+                ;;
+        esac
+    '
+
+    if [ "$IS_CONTAINER" -eq 1 ]; then
+        eval "$CMD"
+    else
+        proot-distro login ubuntu -- bash -c "$CMD"
+    fi
+}
+
 start_services() {
     echo "[Hub] 正在一键启动全部后台服务..."
     start_snowluma
@@ -609,6 +696,10 @@ case "$ACTION" in
     stop_eridanus)
         stop_eridanus
         ;;
+    eridanus_tool|tool|update_eridanus)
+        shift
+        eridanus_tool "$@"
+        ;;
     sync_time|timezone)
         sync_timezone
         echo "[Hub] 时区已同步为北京时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -643,6 +734,10 @@ EOF
 fi
 
 chmod +x ~/bot_service.sh
+
+UBUNTU_DIR="/data/data/com.termux/files/usr/var/lib/proot-distro/containers/ubuntu"
+[ ! -d "$UBUNTU_DIR" ] && UBUNTU_DIR="/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+
 mkdir -p "$UBUNTU_DIR/rootfs/root" 2>/dev/null || true
 cp -f ~/bot_service.sh "$UBUNTU_DIR/rootfs/root/bot_service.sh" 2>/dev/null || true
 echo "✓ bot_service.sh 控制脚本部署完成"

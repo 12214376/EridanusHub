@@ -172,8 +172,14 @@ start_napcat() {
         # 2. 软链接 resources 目录避免路径歧义
         [ -d /opt/QQ/resources ] && ln -sf /opt/QQ/resources /usr/bin/resources 2>/dev/null || true
 
-        # 3. 启动无头 QQ（xvfb 1x1 虚拟屏幕，免桌面/免 VNC/极低功耗，直接通过 WebUI 6099 扫码配置）
-        exec xvfb-run -a /opt/QQ/qq --no-sandbox -q > /root/napcat.log 2>&1
+        # 3. 启动 NapCat（优先原生极速 node napcat.mjs，兼容 Linux QQ 挂载）
+        if [ -f /root/napcat/napcat.mjs ]; then
+            cd /root/napcat && exec node napcat.mjs > /root/napcat.log 2>&1
+        elif command -v xvfb-run >/dev/null 2>&1 && [ -f /opt/QQ/qq ]; then
+            exec xvfb-run -a /opt/QQ/qq --no-sandbox -q > /root/napcat.log 2>&1
+        else
+            cd /root/napcat && exec node loadNapCat.js > /root/napcat.log 2>&1
+        fi
     '
 
     if [ "$IS_CONTAINER" -eq 1 ]; then
