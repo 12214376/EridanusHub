@@ -70,8 +70,8 @@ export TZ=Asia/Shanghai
 echo "-> [Ubuntu] 更新软件源..."
 apt-get update -y || true
 
-echo "-> [Ubuntu] 安装网络及核心解压工具 (curl, wget, git, tar, unzip, xz)..."
-apt-get install -y --no-install-recommends ca-certificates curl wget git tar unzip xz-utils || true
+echo "-> [Ubuntu] 安装网络及核心解压工具 (curl, wget, git, tar, unzip, xz, gnutls)..."
+apt-get install -y --no-install-recommends ca-certificates curl wget git tar unzip xz-utils libgnutls30t64 libgnutls30 2>/dev/null || true
 
 echo "-> [Ubuntu] 安装 Xvfb / VNC / Web 运行依赖..."
 apt-get install -y --no-install-recommends xvfb fluxbox x11vnc novnc websockify || true
@@ -81,7 +81,10 @@ echo "-> [Ubuntu] 安装 Python 运行环境..."
 apt-get install -y --no-install-recommends python3 python3-pip python3-venv || true
 
 echo "-> [Ubuntu] 安装 Linux QQ / GUI 底层动态链接库..."
-apt-get install -y --no-install-recommends     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2     libgbm1 libpango-1.0-0 libcairo2 libgtk-3-0 fonts-noto-cjk     libasound2t64 libasound2 2>/dev/null || true
+apt-get install -y --no-install-recommends \
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+    libgbm1 libpango-1.0-0 libcairo2 libgtk-3-0 fonts-noto-cjk \
+    libasound2t64 libasound2 2>/dev/null || true
 apt-get install -fy 2>/dev/null || true
 
 # 安装 Node.js 22 LTS
@@ -138,8 +141,8 @@ fi
 # 3. 部署 NapCatQQ
 mkdir -p /root/napcat
 if [ ! -f /root/napcat/napcat.mjs ] && [ ! -f /root/napcat/loadNapCat.js ]; then
-    echo "-> [Ubuntu] 下载 NapCatQQ (Linux ARM64)..."
-    download_file "https://github.com/NapNeko/NapCatQQ/releases/download/v4.4.55/NapCat.linux.arm64.zip" /tmp/napcat.zip
+    echo "-> [Ubuntu] 下载 NapCatQQ (Shell ARM64)..."
+    download_file "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.zip" /tmp/napcat.zip
     if [ -f /tmp/napcat.zip ] && [ $(wc -c < /tmp/napcat.zip 2>/dev/null || echo 0) -gt 10000 ]; then
         unzip -q -o /tmp/napcat.zip -d /root/napcat || true
         rm -f /tmp/napcat.zip
