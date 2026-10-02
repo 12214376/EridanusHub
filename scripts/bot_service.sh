@@ -154,12 +154,16 @@ start_napcat() {
         export TZ=Asia/Shanghai
         export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
         
-        # 0. 确保 WebUI token 存在且固定为 124982318dfe
+        # 0. 自动探测并注入 GnuTLS 动态库，彻底解决 libbugly.so undefined symbol: gnutls_free 符号缺失
+        GNUTLS_SO=$(find /usr/lib -name 'libgnutls.so.30*' 2>/dev/null | head -n 1)
+        [ -n "$GNUTLS_SO" ] && export LD_PRELOAD="$GNUTLS_SO${LD_PRELOAD:+:$LD_PRELOAD}"
+
+        # 1. 确保 WebUI token 存在且固定为 124982318dfe
         if [ -f /root/napcat/config/webui.json ]; then
             sed -i "s/\"token\": \".*\"/\"token\": \"124982318dfe\"/" /root/napcat/config/webui.json 2>/dev/null || true
         fi
 
-        # 1. 备份原版 package.json 并挂载 NapCat 注入脚本
+        # 2. 备份原版 package.json 并挂载 NapCat 注入脚本
         if [ -f /opt/QQ/resources/app/package.json ] && [ ! -f /opt/QQ/resources/app/package.json.orig ]; then
             cp /opt/QQ/resources/app/package.json /opt/QQ/resources/app/package.json.orig 2>/dev/null || true
         fi
@@ -169,10 +173,10 @@ start_napcat() {
             sed -i "s/\"main\": \".*\"/\"main\": \".\/loadNapCat.js\"/" /opt/QQ/resources/app/package.json 2>/dev/null || true
         fi
 
-        # 2. 软链接 resources 目录避免路径歧义
+        # 3. 软链接 resources 目录避免路径歧义
         [ -d /opt/QQ/resources ] && ln -sf /opt/QQ/resources /usr/bin/resources 2>/dev/null || true
 
-        # 3. 启动 NapCat（优先原生极速 node napcat.mjs，兼容 Linux QQ 挂载）
+        # 4. 启动 NapCat（优先原生极速 node napcat.mjs，兼容 Linux QQ 挂载）
         if [ -f /root/napcat/napcat.mjs ]; then
             cd /root/napcat && exec node napcat.mjs > /root/napcat.log 2>&1
         elif command -v xvfb-run >/dev/null 2>&1 && [ -f /opt/QQ/qq ]; then
@@ -422,8 +426,18 @@ eridanus_tool() {
 }
 
 start_services() {
-    echo "[Hub] 正在一键启动全部后台服务..."
-    start_snowluma
+    local target_bot="$1"
+    echo "[Hub] 正在一键启动全部后台服务栈..."
+    
+    if [ "$target_bot" = "snowluma" ]; then
+        start_snowluma
+    elif [ "$target_bot" = "llonebot" ] || [ -f /root/llonebot/llbot ] || [ -f /root/llonebot/main.js ]; then
+        start_llonebot
+    elif [ "$target_bot" = "napcat" ] || [ -f /root/napcat/napcat.mjs ]; then
+        start_napcat
+    else
+        start_napcat
+    fi
     sleep 2
     start_eridanus
     echo "[Hub] 全部启动命令已下发，请在 App 查看端口状态。"
@@ -441,7 +455,7 @@ stop_services() {
 
 case "$ACTION" in
     start)
-        start_services
+        start_services "$2"
         ;;
     stop)
         stop_services
@@ -449,7 +463,7 @@ case "$ACTION" in
     restart)
         stop_services
         sleep 2
-        start_services
+        start_services "$2"
         ;;
     start_snowluma)
         start_snowluma
